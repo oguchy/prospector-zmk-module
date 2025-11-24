@@ -173,6 +173,18 @@ ZMK_SUBSCRIPTION(prospector_position_listener, zmk_position_state_changed);
 // Profile change listener for immediate advertisement updates
 static int profile_changed_listener(const zmk_event_t *eh) {
     LOG_DBG("📡 BLE profile changed - updating advertisement");
+
+    if (zmk_ble_active_profile_is_open()) {
+        // Stop any existing advertising
+        bt_le_adv_stop();
+        k_sleep(K_MSEC(50));
+
+        // restart default advertising
+        update_advertising();
+        default_adv_stopped = false;
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+
     if (adv_started) {
         k_work_cancel_delayable(&adv_work);
         k_work_schedule(&adv_work, K_NO_WAIT);
@@ -675,25 +687,29 @@ static void start_custom_advertising(void) {
 }
 
 static void adv_work_handler(struct k_work *work) {
-    // Update manufacturer data
-    build_manufacturer_payload();
-    
-    // Try to update existing advertising data first
-    int err = bt_le_adv_update_data(adv_data_array, ARRAY_SIZE(adv_data_array), 
-                                    scan_rsp, ARRAY_SIZE(scan_rsp));
-    
-    if (err == 0) {
-        LOG_INF("✅ Advertising data updated successfully");
+    if (zmk_ble_active_profile_is_open()) {
+        LOG_DBG("Skipping advertising on unpaired profile");
     } else {
-        // Any error - restart advertising to ensure continuous broadcast
-        LOG_INF("Advertising update failed (%d), restarting...", err);
+        // Update manufacturer data
+        build_manufacturer_payload();
         
-        // Stop any existing advertising
-        bt_le_adv_stop();
-        k_sleep(K_MSEC(50));
+        // Try to update existing advertising data first
+        int err = bt_le_adv_update_data(adv_data_array, ARRAY_SIZE(adv_data_array), 
+                                        scan_rsp, ARRAY_SIZE(scan_rsp));
         
-        // Always try to restart advertising regardless of connection state
-        start_custom_advertising();
+        if (err == 0) {
+            LOG_INF("✅ Advertising data updated successfully");
+        } else {
+            // Any error - restart advertising to ensure continuous broadcast
+            LOG_INF("Advertising update failed (%d), restarting...", err);
+            
+            // Stop any existing advertising
+            bt_le_adv_stop();
+            k_sleep(K_MSEC(50));
+            
+            // Always try to restart advertising regardless of connection state
+            start_custom_advertising();
+        }
     }
     
     // Schedule next update with adaptive interval
@@ -738,9 +754,6 @@ static int init_prospector_status(const struct device *dev) {
 #else
     LOG_INF("Prospector: Standalone device - advertising enabled");
 #endif
-    
-    // RESTORE WORKING APPROACH: Stop ZMK advertising early
-    stop_default_advertising(NULL);
     
     // Initialize activity tracking
     last_activity_time = k_uptime_get_32();
@@ -791,9 +804,6 @@ int zmk_status_advertisement_stop(void) {
 
 // Note: Profile changes are detected through periodic updates (200ms/1000ms intervals)
 // This provides sufficient responsiveness without needing complex event listeners
-
-// Initialize early to stop default advertising before ZMK starts it
-SYS_INIT(stop_default_advertising, APPLICATION, 90);
 
 // Initialize Prospector system after ZMK BLE is ready
 SYS_INIT(init_prospector_status, APPLICATION, 95);
