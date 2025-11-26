@@ -718,6 +718,18 @@ static void process_display_refresh(void) {
                 zmk_widget_layer_status_update(layer_widget, kbd);
             }
 
+            if (kbd->data.modifier_flags) {
+                if (!modifier_widget) {
+                    modifier_widget = zmk_widget_modifier_status_create(main_screen);
+                    if (modifier_widget) {
+                        lv_obj_align(zmk_widget_modifier_status_obj(modifier_widget), LV_ALIGN_CENTER, 0, 30);
+                    }
+                }
+            }
+            if (modifier_widget) {
+                zmk_widget_modifier_status_update(modifier_widget, kbd);
+            }
+
 #if !IS_ENABLED(CONFIG_PROSPECTOR_TOUCH_ENABLED)
             // Non-touch version: Update signal status widget with RSSI
             zmk_widget_signal_status_update(&signal_widget, kbd->rssi);
