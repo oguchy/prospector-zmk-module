@@ -193,6 +193,16 @@ ZMK_SUBSCRIPTION(prospector_position_listener, zmk_position_state_changed);
 // Profile change listener for immediate advertisement updates
 static int profile_changed_listener(const zmk_event_t *eh) {
     LOG_DBG("📡 BLE profile changed - triggering burst advertisement");
+
+    if (zmk_ble_active_profile_is_open()) {
+        bt_le_adv_stop();
+        prospector_adv_active = false;
+
+        // restart default advertising
+        update_advertising();
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+
     if (adv_started) {
         atomic_set(&burst_remaining, BURST_COUNT);
         k_work_cancel_delayable(&adv_work);
